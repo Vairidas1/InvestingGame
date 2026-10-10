@@ -1,125 +1,70 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
-
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={handleClick}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
-          function handleClick(){
-            setCount(count+1)
-          }
+import { useEffect, useReducer, useState } from 'react';
+import { advance, benchmark, createGame, trade, worth, tick, restoreGame, dateForDay } from './engine';
+import { PROFILES } from './companies';
+import PriceChart from './PriceChart';
+import type { ChartMode, ChartRange } from './PriceChart';
+import type { Game } from './engine';
+const money = (v: number) => new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 }).format(v);
+const pct = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+const KEY = 'investgame-v2';
+function load(): Game {
+    for (const key of [KEY, 'investgame2-v1']) {
+        try { const game=restoreGame(JSON.parse(localStorage.getItem(key)||'null')); if(game)return game; } catch { /* Keep the old save untouched if unreadable. */ }
+    }
+    return createGame();
 }
-
-export default App
+type Action = {type:'pulse';auto:boolean} | {type:'advance'} | {type:'reset';seed?:number} | {type:'trade';symbol:string;quantity:number;side:'buy'|'sell'};
+function reducer(state:{game:Game;notice:string},action:Action):{game:Game;notice:string} {
+    if(action.type==='pulse') {const next=tick(state.game);return {...state,game:action.auto&&next.ticks>=30?advance(next):next};}
+    if(action.type==='advance')return {game:advance(state.game),notice:''};
+    if(action.type==='reset')return {game:createGame(action.seed),notice:''};
+    try {const game=trade(state.game,action.symbol,action.quantity,action.side);return {game,notice:`${action.side==='buy'?'Bought':'Sold'} ${action.quantity} ${action.symbol} at ${money(state.game.companies.find(c=>c.symbol===action.symbol)!.price)}.`};}
+    catch(error){return {...state,notice:(error as Error).message};}
+}
+function Chart({ values, small = false }: {
+    values: number[];
+    small?: boolean;
+}) { const data = values.length === 1 ? [values[0], values[0]] : values; const min = Math.min(...data) * .995, max = Math.max(...data) * 1.005; const points = data.map((v, i) => `${i / (data.length - 1) * 700},${160 - (v - min) / (max - min) * 140}`).join(' '); return <svg className={small ? 'spark' : 'chart'} viewBox="0 0 700 180" preserveAspectRatio="none" role="img" aria-label={`Price chart from ${data[0].toFixed(2)} to ${data.at(-1)!.toFixed(2)}`}><path d="M0 40H700 M0 100H700 M0 160H700" stroke="currentColor" opacity=".10"/><polygon points={`0,180 ${points} 700,180`} fill="currentColor" opacity=".07"/><polyline points={points} fill="none" stroke="currentColor" strokeWidth={small ? 9 : 3} vectorEffect="non-scaling-stroke"/></svg>; }
+export default function App() {
+    const [{game:g,notice},dispatch] = useReducer(reducer,undefined,()=>({game:load(),notice:''}));
+    const [live,setLive]=useState(true);
+    const [speed,setSpeed]=useState(1);
+    const [autoDays,setAutoDays]=useState(false);
+    const [chartMode,setChartMode]=useState<ChartMode>('candles');
+    const [range,setRange]=useState<ChartRange>('2Y');
+    useEffect(()=>{
+        if(!live)return;
+        const timer=window.setInterval(()=>{if(!document.hidden)dispatch({type:'pulse',auto:autoDays});},2000/speed);
+        return ()=>window.clearInterval(timer);
+    },[live,speed,autoDays]);
+    const [selected, setSelected] = useState('MHRD');
+    const [qty, setQty] = useState('5');
+    const [side, setSide] = useState<'buy' | 'sell'>('buy');
+    const [tab, setTab] = useState('Market');
+    const [feed, setFeed] = useState('All');
+    const [message, setMessage] = useState('');
+    const [help, setHelp] = useState(false);
+    const [reset, setReset] = useState(false);
+    const [seed, setSeed] = useState('');
+    useEffect(() => { try {
+        localStorage.setItem(KEY, JSON.stringify(g));
+    }
+    catch {
+        setMessage('Autosave unavailable. Keep this tab open to preserve your campaign.');
+    } }, [g]);
+    const c = g.companies.find(c => c.symbol === selected)!;
+    const h = g.holdings[selected] || { shares: 0, cost: 0 };
+    const equity = worth(g), ret = (equity / 10000 - 1) * 100;
+    const total = Number(qty) * c.price, fee = Math.max(1, total * .001);
+    const held = g.companies.filter(c => g.holdings[c.symbol]?.shares);
+    const concentration = Math.max(0, ...g.companies.map(c => c.price * (g.holdings[c.symbol]?.shares || 0) / equity)) * 100;
+    const profile = PROFILES.find(p=>p.symbol===selected)!;
+    function order() { dispatch({type:'trade',symbol:selected,quantity:Number(qty),side}); }
+    return <><header><a className="brand" href="#" aria-label="InvestingGame home"><span className="brand-icon">▥</span> InvestingGame</a><span className="season">THE OPENING BELL <i>/</i> OPEN CAMPAIGN</span><button className="quiet" onClick={() => setHelp(true)}>How to play <span>?</span></button></header><main><section className="intro"><div><div className="eyebrow">YOUR DESK. YOUR DECISIONS.</div><h1>Read the market.<br /><span>Make your move.</span></h1><p>Build conviction. Trade the noise. Beat the market.</p></div><div className="session"><div className="session-top"><span>Trading session</span><b>DAY {String(g.day).padStart(2, '0')} <small>{dateForDay(g.day)}</small></b></div><div className="market-clock"><span className={live?'live-status':'paused-status'}>{live?'● Market running':'Ⅱ Market paused'}</span><span>{autoDays?`Next day in ${Math.max(1,Math.ceil((30-g.ticks)*2/speed))}s`:'Manual days'}</span></div><div className="time-controls"><button aria-pressed={!live} onClick={()=>setLive(v=>!v)}>{live?'Pause':'Resume'}</button>{[1,3,5].map(n=><button key={n} aria-pressed={speed===n} className={speed===n?'chosen':''} onClick={()=>setSpeed(n)}>{n}×</button>)}</div><label className="auto-days"><input type="checkbox" checked={autoDays} onChange={e=>setAutoDays(e.target.checked)}/> Advance days automatically</label><button className="primary next" onClick={() => dispatch({type:'advance'})}>Advance one day <span>▸</span></button><small>No end date. Live quotes move between days.</small></div></section><section className="stats"><article><label>Portfolio value</label><strong>{money(equity)}</strong><span className={ret >= 0 ? 'up' : 'down'}>{pct(ret)} <em>since you started</em></span></article><article><label>Available cash</label><strong>{money(g.cash)}</strong><span>{(g.cash / equity * 100).toFixed(0)}% <em>of your portfolio</em></span></article><article><label>Market benchmark</label><strong className={benchmark(g) >= 10000 ? 'up' : 'down'}>{pct((benchmark(g) / 10000 - 1) * 100)}</strong><span><em>Equal-weight basket · six companies</em></span></article><article><label>Market mood</label><strong className="mood">{['Risk-off', 'Mixed signals', 'Risk-on'][g.regime + 1]} <span>{['↘', '≈', '↗'][g.regime + 1]}</span></strong><span><em>Next earnings: {`day ${(Math.floor(g.day / 10) + 1) * 10}`}</em></span></article></section>
+    <div className="workspace"><section className="desk"><nav>{['Market', 'Portfolio', 'Trade journal'].map(t => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}{t === 'Portfolio' && <small>{held.length}</small>}</button>)}<span>FICTIONAL EXCHANGE</span></nav>{tab === 'Market' ? <div className="market"><div className="table-label"><span>Company</span><span>Price / day</span><span>Trend</span></div>{g.companies.map(stock => <button className={'stock ' + (selected === stock.symbol ? 'selected' : '')} key={stock.symbol} onClick={() => setSelected(stock.symbol)}><span className={'ticker-icon ' + stock.symbol}>{stock.symbol.slice(0, 2)}</span><span className="stock-name"><b>{stock.name}</b><small>{stock.symbol} <i>·</i> {stock.sector}</small></span><span className="stock-price"><b>{money(stock.price)}</b><small className={stock.change >= 0 ? 'up' : 'down'}>{pct(stock.change)}</small></span><span className={stock.change >= 0 ? 'up' : 'down'}><Chart values={stock.candles.slice(-30).map(b=>b.close)} small/></span></button>)}</div> : tab === 'Portfolio' ? <div className="portfolio"><div className="section-title"><h2>Your positions</h2><span>{held.length} / 6 companies</span></div><Chart values={g.equity}/>{held.length === 0 ? <p className="empty">Your first investment starts here. Choose a company in Market, then buy shares.</p> : held.map(s => { const p = g.holdings[s.symbol]; return <button className="position" key={s.symbol} onClick={() => { setSelected(s.symbol); setTab('Market'); }}><b>{s.name}<small>{p.shares} shares · average cost {money(p.cost / p.shares)}</small></b><span>{money(p.shares * s.price)}<small className={p.shares * s.price >= p.cost ? 'up' : 'down'}>{money(p.shares * s.price - p.cost)} unrealized</small></span></button>; })}<p className="risk">{concentration > 45 ? 'Concentration risk: one company is more than 45% of your portfolio.' : held.length >= 3 ? 'You’re spreading company-specific risk across several businesses.' : 'Diversification can help reduce the impact of a single company’s bad day.'}</p></div> : <div className="journal"><h2>Every decision leaves a trail.</h2>{g.trades.length ? g.trades.map((t, i) => <p key={i}>{t}</p>) : <p className="empty">No trades yet. Your buys, sells, and fees will appear here.</p>}</div>}
+    <section className="research"><div className="section-title"><div><span className="eyebrow">COMPANY INTELLIGENCE</span><h2>{c.name} <small>{c.symbol}</small></h2></div><span className="pill">{c.vol > .04 ? 'High volatility' : c.vol > .02 ? 'Medium volatility' : 'Low volatility'}</span></div><div className="price-heading"><strong>{money(c.price)}</strong><span className={c.change >= 0 ? 'up' : 'down'}>{pct(c.change)} today</span></div><div className="chart-controls"><div className="segmented" aria-label="Chart type">{(['line','candles'] as const).map(mode=><button key={mode} aria-pressed={chartMode===mode} className={chartMode===mode?'chosen':''} onClick={()=>setChartMode(mode)}>{mode==='line'?'Line':'Candles'}</button>)}</div><div className="segmented" aria-label="Chart range">{(['1M','6M','2Y','All'] as const).map(r=><button key={r} aria-pressed={range===r} className={range===r?'chosen':''} onClick={()=>setRange(r)}>{r}</button>)}</div></div><PriceChart key={`${selected}-${range}`} candles={c.candles} mode={chartMode} range={range}/><div className="fundamentals"><div><label>Revenue</label><b>€{Math.round(c.revenue).toLocaleString()}m</b></div><div><label>Growth</label><b className={c.growth >= 0 ? 'up' : 'down'}>{c.growth.toFixed(1)}%</b></div><div><label>Debt / revenue</label><b>{(c.debt / c.revenue).toFixed(2)}×</b></div><div><label>Social hype</label><b>{Math.round(c.hype * 100)}<small> / 100</small></b></div></div><p className="explanation"><span>↳</span> {c.reason}</p><section className="company-story"><div className="section-title"><h2>The story so far</h2><span>Founded {profile.founded}</span></div><p>{profile.story}</p><div className="thesis"><div><label>The opportunity</label><p>{profile.bullCase}</p></div><div><label>The risk</label><p>{profile.bearCase}</p></div></div><details><summary>Company timeline · {c.milestones.length} milestones</summary><ol className="timeline">{[...c.milestones].reverse().map((m,i)=><li key={`${m.day}-${i}`}><time>{dateForDay(m.day)}</time><b>{m.title}</b><p>{m.detail}</p></li>)}</ol></details><small className="history-note">Fictional history · 504 trading sessions before your arrival. Older migrated saves have estimated candle ranges. Charts retain the latest 2,520 sessions.</small></section></section></section>
+    <aside><section className="ticket"><div className="section-title"><h2>Place an order</h2><span className="pill">{selected}</span></div><div className="switch">{(['buy', 'sell'] as const).map(s => <button key={s} className={side === s ? 'chosen' : ''} onClick={() => setSide(s)}>{s === 'buy' ? 'Buy' : 'Sell'}</button>)}</div><label htmlFor="quantity">Number of shares <span>You own {h.shares}</span></label><div className="quantity"><button aria-label="Decrease shares" onClick={() => setQty(String(Math.max(1, Number(qty) - 1)))}>−</button><input id="quantity" type="number" min="1" step="1" value={qty} onChange={e => setQty(e.target.value)}/><button aria-label="Increase shares" onClick={() => setQty(String(Math.max(1, Number(qty) + 1)))}>+</button></div><div className="order-line"><span>Market price</span><b>{money(c.price)}</b></div><div className="order-line"><span>Trading fee (0.1%, min €1)</span><b>{money(Number.isFinite(fee) ? fee : 0)}</b></div><div className="order-line total"><span>{side === 'buy' ? 'Estimated cost' : 'Estimated proceeds'}</span><b>{money(Number.isFinite(total) ? total + (side === 'buy' ? fee : -fee) : 0)}</b></div><button className="primary" onClick={order}>{side === 'buy' ? 'Buy' : 'Sell'} {selected}</button><div className="notice" role="status">{message || notice || 'Orders execute at the current live quote.'}</div></section>
+    <section className="feed"><div className="section-title"><h2><span className="feed-logo">𝕏</span> The feed</h2><span className="simulated">SIMULATED</span></div><p className="feed-sub">The market has opinions. Not all are facts.</p><div className="feed-filters">{['All', 'Reports', 'Rumors'].map(f => <button className={feed === f ? 'chosen' : ''} key={f} onClick={() => setFeed(f)}>{f}</button>)}</div><div className="posts">{g.posts.filter(p => feed === 'All' || (feed === 'Reports' ? p.kind !== 'rumor' : p.kind === 'rumor')).slice(0, 16).map((p, i) => <article className="post" key={`${p.day}-${i}`}><div className={'avatar ' + p.kind}>{p.author.split(' ').map(s => s[0]).slice(0, 2).join('')}</div><div><b>{p.author} <small>· D{p.day}</small></b><span className="handle">@{p.handle}</span><p>{p.text}</p><div className="post-bottom"><span className={'tag ' + p.kind}>{p.kind === 'rumor' ? 'Unverified rumor' : p.kind === 'report' ? 'Company report' : 'Market briefing'}</span>{p.symbol && <button onClick={() => { setSelected(p.symbol!); setTab('Market'); }}>{p.symbol}</button>}</div></div></article>)}</div></section></aside></div><footer><span>InvestingGame <i>·</i> Fictional companies. Simulated money. Real decisions.</span><button onClick={() => setReset(true)}>New campaign</button><span>Progress saved on this browser</span></footer></main>
+    {help && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-label="How to play"><button className="close" onClick={() => setHelp(false)} aria-label="Close help">×</button><span className="eyebrow">WELCOME TO THE DESK</span><h2>An open-ended market.</h2><p>Start with €10,000 and trade for as long as you like. Quotes move while the market is running. Pause to research, choose 1× / 3× / 5× speed, or enable automatic days. Manual day advancement always remains available.</p><ol><li><b>Research the business.</b> Read two years of price history and company milestones. Switch between line and candle charts; hover to inspect open, high, low and close.</li><li><b>Read the room.</b> Reports affect business expectations. Rumors move hype but aren’t promises.</li><li><b>Manage your risk.</b> Every trade costs 0.1% (minimum €1). Cash is stable; concentrated positions swing harder.</li><li><b>Watch earnings.</b> Every 10 days companies report. Good growth can still disappoint high expectations.</li></ol><p>This is a game model, not real market data. The feed is fictional and does not connect to Twitter/X. Your campaign saves locally. The clock runs only while this tab is visible; closing it causes no offline price changes. Automatic days take 60 seconds at 1×, 20 at 3×, and 12 at 5×. The benchmark starts when you do, excluding pre-campaign history.</p><button className="primary" onClick={() => setHelp(false)}>Back to the market</button></section></div>}
+    {reset && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-label="New campaign"><h2>A fresh opening bell.</h2><p>This replaces your current saved campaign. Enter a numeric seed to replay the same starting market (live timing also affects outcomes), or leave it blank for a random one.</p><label htmlFor="seed">Market seed</label><input id="seed" type="number" value={seed} onChange={e => setSeed(e.target.value)} placeholder="Random"/><div className="modal-actions"><button onClick={() => setReset(false)}>Keep playing</button><button className="primary" onClick={() => { dispatch({type:'reset',seed:seed ? Number(seed) : undefined}); setMessage(''); setReset(false); setTab('Market'); }}>Start new campaign</button></div></section></div>}</>;
+}
